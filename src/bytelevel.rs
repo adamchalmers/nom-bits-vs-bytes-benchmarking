@@ -1,5 +1,10 @@
-use crate::{from_nibble, Header, Packet};
-use nom::{bytes::complete::take, IResult};
+use crate::{from_nibble, Header, Operation, Packet};
+use nom::{
+    bytes::complete::take,
+    combinator::map_res,
+    multi::{length_count, length_value, many1},
+    IResult,
+};
 
 impl Header {
     fn parse_bytes(i: &str) -> IResult<&str, Self> {
@@ -29,7 +34,16 @@ pub fn parse(i: &str) -> IResult<&str, Packet> {
                 },
             )
         }),
-        _ => unimplemented!(),
+        other => parse_operator(i, other).map(|(i, (subpackets, type_id))| {
+            (
+                i,
+                Packet::Operator {
+                    version: header.version,
+                    subpackets,
+                    type_id,
+                },
+            )
+        }),
     }
 }
 
@@ -57,18 +71,62 @@ fn parse_literal_number(mut i: &str) -> IResult<&str, u64> {
     Ok((i, num))
 }
 
+/// Returns a parser which consumes the given number of binary characters from the start of the
+/// string, then interprets it as a binary number and returns it as a `usize`.
+fn parse_num(n: usize) -> impl FnMut(&str) -> IResult<&str, usize> {
+    move |i| map_res(take(n), |s| usize::from_str_radix(s, 2))(i)
+}
+
+/// Parse a PacketBody::Operator from a sequence of bits.
+fn parse_operator(i: &str, type_id: u8) -> IResult<&str, (Vec<Packet>, Operation)> {
+    let (i, length_type_id) = take(1usize)(i)?;
+    let (i, subpackets) = if length_type_id == "0" {
+        // the next 15 bits are a number that represents
+        // the total length in bits of the sub-packets contained by this packet.
+        length_value(parse_num(15), many1(parse))(i)?
+    } else {
+        // the next 11 bits are a number that represents
+        // the number of sub-packets immediately contained by this packet.
+        length_count(parse_num(11), parse)(i)?
+    };
+
+    Ok((i, (subpackets, Operation::from(type_id))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_packet() {
+    fn test_parse_literal_packet() {
         let expected = Packet::Literal {
             version: 6,
             value: 2021,
         };
         let actual = parse("110100101111111000101000").unwrap().1;
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_parse_recursive_packet() {
+        let expected = Packet::Operator {
+            version: 1,
+            type_id: Operation::Less,
+            subpackets: vec![
+                Packet::Literal {
+                    version: 6,
+                    value: 10,
+                },
+                Packet::Literal {
+                    version: 2,
+                    value: 20,
+                },
+            ],
+        };
+        let actual = parse("00111000000000000110111101000101001010010001001000000000")
+            .unwrap()
+            .1;
+        assert_eq!(actual, expected)
     }
 
     #[test]

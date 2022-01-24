@@ -102,30 +102,30 @@ fn parse_literal_number(mut i: BitInput) -> IResult<BitInput, u64> {
 /// is currently being read.
 ///
 /// For example, you might start with 16 bits, pointing at the 0th bit:
-///```norun
+///```text
 /// 1111000011001100
 /// ^
-/// ```norun
+/// ```text
 /// Nom represents this using the BitInput type as:
 /// ```
 /// ([0b11110000, 0b11001100], 0)
 ///     ^
-/// ```norun
+/// ```text
 /// Lets say you parsed 3 bits from there. After that, the BitInput would be
 ///
-/// ```norun
+/// ```text
 /// ([0b11110000, 0b11001100], 3)
 ///        ^
-/// ```norun
+/// ```text
 /// After reading another six bits, the input would have advanced past the first byte:
 ///
-/// ```norun
+/// ```text
 /// ([0b11110000, 0b11001100], 9)
 ///                  ^
 /// ```
 /// Because the first byte will never be used again, Nom optimizes by dropping the first byte
 ///
-/// ```norun
+/// ```text
 ///  ([0b11001100], 1)
 ///       ^
 /// ```
