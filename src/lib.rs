@@ -1,41 +1,6 @@
 pub mod bitlevel;
 pub mod bytelevel;
 
-/// Newtype around a very common type in Nom.
-/// Represents a binary sequence which can be parsed one bit at a time.
-/// Nom represents this as a sequence of bytes, and an offset tracking which number bit
-/// is currently being read.
-///
-/// For example, you might start with 16 bits, pointing at the 0th bit:
-///```norun
-/// 1111000011001100
-/// ^
-/// ```norun
-/// Nom represents this using the BitInput type as:
-/// ```
-/// ([0b11110000, 0b11001100], 0)
-///     ^
-/// ```norun
-/// Lets say you parsed 3 bits from there. After that, the BitInput would be
-///
-/// ```norun
-/// ([0b11110000, 0b11001100], 3)
-///        ^
-/// ```norun
-/// After reading another six bits, the input would have advanced past the first byte:
-///
-/// ```norun
-/// ([0b11110000, 0b11001100], 9)
-///                  ^
-/// ```
-/// Because the first byte will never be used again, Nom optimizes by dropping the first byte
-///
-/// ```norun
-///  ([0b11001100], 1)
-///       ^
-/// ```
-pub type BitInput<'a> = (&'a [u8], usize);
-
 /// A tree structure that represents some number. Can be parsed out of its binary encoding.
 #[derive(Eq, PartialEq, Debug)]
 pub enum Packet {
@@ -63,6 +28,22 @@ pub enum Operation {
     Equal,
 }
 
+/// Every type_id corresponds to a particular operation.
+impl From<u8> for Operation {
+    fn from(type_id: u8) -> Self {
+        match type_id {
+            0 => Self::Sum,
+            1 => Self::Product,
+            2 => Self::Min,
+            3 => Self::Max,
+            4 => panic!("Literals should not be parsed into Operations"),
+            5 => Self::Greater,
+            6 => Self::Less,
+            7 => Self::Equal,
+            other => panic!("illegal type_id {}", other),
+        }
+    }
+}
 /// Every packet has a header.
 #[derive(Eq, PartialEq, Debug)]
 pub struct Header {
