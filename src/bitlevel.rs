@@ -1,8 +1,5 @@
 use crate::{from_nibble, BitInput, Header, Packet};
-use nom::{
-    bits::{bits, complete::take},
-    IResult,
-};
+use nom::{bits::complete::take, IResult};
 
 /// Takes n bits from the BitInput.
 /// Returns the remaining BitInput and a number parsed the first n bits.
@@ -10,12 +7,8 @@ fn take_up_to_8_bits(i: BitInput, n: u8) -> IResult<BitInput, u8> {
     take(n)(i)
 }
 
-pub fn run_parser(i: &[u8]) -> IResult<&[u8], Packet> {
-    bits(parse)(i)
-}
-
 /// Parse a Packet from a sequence of bits.
-fn parse(i: BitInput) -> IResult<BitInput, Packet> {
+pub fn parse(i: BitInput) -> IResult<BitInput, Packet> {
     let (i, header) = Header::parse_bits(i)?;
     match header.type_id {
         4 => parse_literal_number(i).map(|(i, value)| {

@@ -12,7 +12,10 @@ fn benchmark_parse(c: &mut Criterion) {
             BenchmarkId::new("Bit parser", test_num),
             &bit_input,
             |b, bit_input| {
-                b.iter(|| black_box(bitlevel::run_parser(&bit_input)).unwrap());
+                pub fn parser(i: &[u8]) -> nom::IResult<&[u8], Packet> {
+                    nom::bits::bits(bitlevel::parse)(i)
+                }
+                b.iter(|| black_box(parser(bit_input)).unwrap());
             },
         );
         group.bench_with_input(
