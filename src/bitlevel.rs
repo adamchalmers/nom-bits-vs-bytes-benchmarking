@@ -139,3 +139,66 @@ fn bits_remaining(i: &BitInput) -> usize {
     let remaining_bytes = i.0.len() - 1;
     bits_in_first_byte + (8 * remaining_bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::bitlevel::BitInput;
+
+    #[test]
+    fn test_tag() {
+        let tests: Vec<(Vec<u8>, u8, u8, bool)> = vec![
+            (vec![0xff], 4, 0x0f, true),
+            (vec![0xff], 1, 0x01, true),
+            (vec![0xff], 2, 0x01, false),
+            (vec![0xff], 8, 0xfe, false),
+        ];
+        fn parser(
+            pattern: u8,
+            num_bits_to_compare: u8,
+            input: BitInput,
+        ) -> nom::IResult<BitInput, u8> {
+            nom::bits::complete::tag(pattern, num_bits_to_compare)(input)
+        }
+        for (test_num, (input, num_bits_to_compare, pattern, expected)) in
+            tests.into_iter().enumerate()
+        {
+            let answer = parser(pattern, num_bits_to_compare, (input.as_slice(), 0));
+            assert_eq!(answer.is_ok(), expected, "Failed test #0{test_num}");
+        }
+    }
+
+    #[test]
+    fn test_tag_nomstyle() {
+        use nom::error::{Error, ErrorKind};
+
+        fn parser(pattern: u8, count: u8, input: BitInput) -> nom::IResult<BitInput, u8> {
+            nom::bits::complete::tag(pattern, count)(input)
+        }
+
+        assert_eq!(
+            parser(0x0f, 4, ([0xff].as_slice(), 0)),
+            Ok((([0xff].as_slice(), 4), 0x0f))
+        );
+
+        assert_eq!(
+            parser(0x01, 1, ([0xff].as_slice(), 0)),
+            Ok((([0xff].as_slice(), 1), 0x01))
+        );
+
+        assert_eq!(
+            parser(0x01, 2, ([0xff].as_slice(), 0)),
+            Err(nom::Err::Error(Error {
+                input: ([0xff].as_ref(), 0),
+                code: ErrorKind::TagBits
+            }))
+        );
+
+        assert_eq!(
+            parser(0xfe, 8, ([0xff].as_slice(), 0)),
+            Err(nom::Err::Error(Error {
+                input: ([0xff].as_ref(), 0),
+                code: ErrorKind::TagBits
+            }))
+        );
+    }
+}
