@@ -1,11 +1,5 @@
-use crate::{from_nibble, Header, Operation, Packet};
+use crate::{Header, Operation, Packet};
 use nom::{bits::complete::take, multi::length_count, IResult};
-
-/// Takes n bits from the BitInput.
-/// Returns the remaining BitInput and a number parsed the first n bits.
-fn take_up_to_8_bits(i: BitInput, n: u8) -> IResult<BitInput, u8> {
-    take(n)(i)
-}
 
 /// Takes n bits from the BitInput.
 /// Returns the remaining BitInput and a number parsed the first n bits.
@@ -41,7 +35,7 @@ pub fn parse(i: BitInput) -> IResult<BitInput, Packet> {
 
 /// Parse a PacketBody::Operator from a sequence of bits.
 fn parse_operator(i: BitInput, type_id: u8) -> IResult<BitInput, (Vec<Packet>, Operation)> {
-    let (i, length_type_id) = take_up_to_8_bits(i, 1)?;
+    let (i, length_type_id) = take_up_to_16_bits(i, 1)?;
     let (i, subpackets) = if length_type_id == 0 {
         // the next 15 bits are a number that represents
         // the total length in bits of the sub-packets contained by this packet.
@@ -68,9 +62,15 @@ fn parse_operator(i: BitInput, type_id: u8) -> IResult<BitInput, (Vec<Packet>, O
 
 impl Header {
     fn parse_bits(i: BitInput) -> IResult<BitInput, Self> {
-        let (i, version) = take_up_to_8_bits(i, 3)?;
-        let (i, type_id) = take_up_to_8_bits(i, 3)?;
-        Ok((i, Self { version, type_id }))
+        let (i, version) = take_up_to_16_bits(i, 3)?;
+        let (i, type_id) = take_up_to_16_bits(i, 3)?;
+        Ok((
+            i,
+            Self {
+                version: version.try_into().unwrap(),
+                type_id: type_id.try_into().unwrap(),
+            },
+        ))
     }
 }
 
@@ -78,8 +78,8 @@ impl Header {
 fn parse_literal_number(mut i: BitInput) -> IResult<BitInput, u64> {
     let mut half_bytes = Vec::new();
     loop {
-        let (remaining_i, bit) = take_up_to_8_bits(i, 1)?;
-        let (remaining_i, half_byte) = take_up_to_8_bits(remaining_i, 4)?;
+        let (remaining_i, bit) = take_up_to_16_bits(i, 1)?;
+        let (remaining_i, half_byte) = take_up_to_16_bits(remaining_i, 4)?;
         i = remaining_i;
         half_bytes.push(half_byte);
         if bit == 0 {
@@ -91,7 +91,7 @@ fn parse_literal_number(mut i: BitInput) -> IResult<BitInput, u64> {
         .into_iter()
         .enumerate()
         .map(|(i, b)| (n - i, b))
-        .map(from_nibble)
+        .map(|(i, nibble)| (nibble as u64) << (4 * i))
         .sum();
     Ok((i, num))
 }
@@ -168,37 +168,35 @@ mod tests {
     }
 
     #[test]
-    fn test_tag_nomstyle() {
-        use nom::error::{Error, ErrorKind};
-
-        fn parser(pattern: u8, count: u8, input: BitInput) -> nom::IResult<BitInput, u8> {
-            nom::bits::complete::tag(pattern, count)(input)
+    fn test_take_bit() {
+        use nom::{bits::complete::take, IResult};
+        type BitInput<'a> = (&'a [u8], usize);
+        pub fn take_bit(i: BitInput) -> IResult<BitInput, bool> {
+            let (i, bit): (BitInput, u8) = take(1u8)(i)?;
+            Ok((i, bit != 0))
         }
 
-        assert_eq!(
-            parser(0x0f, 4, ([0xff].as_slice(), 0)),
-            Ok((([0xff].as_slice(), 4), 0x0f))
-        );
+        let input = ([0b10101010].as_ref(), 0);
+        let (input, first_bit) = take_bit(input).unwrap();
+        assert!(first_bit); // First bit is 1
+        let (_input, second_bit) = take_bit(input).unwrap();
+        assert!(!second_bit); // Second bit is 0
+    }
 
-        assert_eq!(
-            parser(0x01, 1, ([0xff].as_slice(), 0)),
-            Ok((([0xff].as_slice(), 1), 0x01))
-        );
+    #[test]
+    fn test_take_nibble() {
+        use nom::{bits::complete::take, IResult};
+        type BitInput<'a> = (&'a [u8], usize);
 
-        assert_eq!(
-            parser(0x01, 2, ([0xff].as_slice(), 0)),
-            Err(nom::Err::Error(Error {
-                input: ([0xff].as_ref(), 0),
-                code: ErrorKind::TagBits
-            }))
-        );
+        /// Take 4 bits from the BitInput.
+        /// Store the output in a u8, because there's no u4 type, and u8 is the closest-available size.
+        pub fn take_nibble(i: BitInput) -> IResult<BitInput, u8> {
+            take(4usize)(i)
+        }
 
-        assert_eq!(
-            parser(0xfe, 8, ([0xff].as_slice(), 0)),
-            Err(nom::Err::Error(Error {
-                input: ([0xff].as_ref(), 0),
-                code: ErrorKind::TagBits
-            }))
-        );
+        let input = ([0b1010_1111].as_ref(), 0);
+        let (_input, actual_nibble) = take_nibble(input).unwrap();
+        let expected_nibble = 0b1010;
+        assert_eq!(actual_nibble, expected_nibble);
     }
 }
